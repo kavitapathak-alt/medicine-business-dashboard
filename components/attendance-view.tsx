@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,77 +41,115 @@ interface AttendanceRecord {
   department: string
 }
 
-const SAMPLE_ATTENDANCE: AttendanceRecord[] = [
-  {
-    id: "1",
-    employeeId: "E001",
-    employeeName: "Rajesh Kumar",
-    date: "2025-01-14",
-    status: "present",
-    checkIn: "09:05 AM",
-    checkOut: "06:30 PM",
-    department: "Engineering",
-  },
-  {
-    id: "2",
-    employeeId: "E002",
-    employeeName: "Priya Singh",
-    date: "2025-01-14",
-    status: "present",
-    checkIn: "08:58 AM",
-    checkOut: "06:15 PM",
-    department: "HR",
-  },
-  {
-    id: "3",
-    employeeId: "E003",
-    employeeName: "Amit Patel",
-    date: "2025-01-14",
-    status: "late",
-    checkIn: "10:30 AM",
-    checkOut: "06:45 PM",
-    department: "Sales",
-  },
-  {
-    id: "4",
-    employeeId: "E004",
-    employeeName: "Sneha Sharma",
-    date: "2025-01-14",
-    status: "absent",
-    checkIn: "-",
-    checkOut: "-",
-    department: "Design",
-  },
-  {
-    id: "5",
-    employeeId: "E005",
-    employeeName: "Rahul Verma",
-    date: "2025-01-14",
-    status: "present",
-    checkIn: "08:45 AM",
-    checkOut: "05:45 PM",
-    department: "Marketing",
-  },
-]
+export interface Employee {
+  id: string
+  name: string
+  department: string
+  email?: string
+  position?: string
+  salary?: string
+  joinDate?: string
+}
+
+const ATT_STORAGE_KEY = "attendance_records_v1"
+const EMP_STORAGE_KEY = "employees_records_v1"
 
 export function AttendanceView() {
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(SAMPLE_ATTENDANCE)
+  // ✅ Attendance (refresh safe)
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const raw = window.localStorage.getItem(ATT_STORAGE_KEY)
+      const parsed = raw ? (JSON.parse(raw) as AttendanceRecord[]) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
+  // ✅ Employees (dropdown ke liye)
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const raw = window.localStorage.getItem(EMP_STORAGE_KEY)
+      const parsed = raw ? (JSON.parse(raw) as Employee[]) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
   const [searchTerm, setSearchTerm] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [dateFilter, setDateFilter] = useState<string>("today")
 
-  const filteredAttendance = attendance.filter((record) => {
-    const matchesSearch =
-      record.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.department.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesStatus = statusFilter === "all" || record.status === statusFilter
-    
-    return matchesSearch && matchesStatus
-  })
+  // ✅ Save attendance on every change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ATT_STORAGE_KEY, JSON.stringify(attendance))
+    } catch (e) {
+      console.error("localStorage save error:", e)
+    }
+  }, [attendance])
+
+  // ✅ Keep employees updated (same tab + other tab)
+  useEffect(() => {
+    const reloadEmployees = () => {
+      try {
+        const raw = window.localStorage.getItem(EMP_STORAGE_KEY)
+        const parsed = raw ? (JSON.parse(raw) as Employee[]) : []
+        setEmployees(Array.isArray(parsed) ? parsed : [])
+      } catch {
+        setEmployees([])
+      }
+    }
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === EMP_STORAGE_KEY) reloadEmployees()
+    }
+
+    // other tab update => storage
+    window.addEventListener("storage", onStorage)
+    // same tab me employee add karke yaha aao => focus
+    window.addEventListener("focus", reloadEmployees)
+
+    return () => {
+      window.removeEventListener("storage", onStorage)
+      window.removeEventListener("focus", reloadEmployees)
+    }
+  }, [])
+
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], [])
+
+  const filteredAttendance = useMemo(() => {
+    return attendance.filter((record) => {
+      const matchesSearch =
+        record.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        record.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        record.department.toLowerCase().includes(searchTerm.toLowerCase())
+
+      const matchesStatus = statusFilter === "all" || record.status === statusFilter
+
+      // date filter
+      let matchesDate = true
+      if (dateFilter === "today") {
+        matchesDate = record.date === todayStr
+      } else if (dateFilter === "week") {
+        const now = new Date()
+        const d = new Date(record.date)
+        const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
+        matchesDate = diff >= 0 && diff <= 7
+      } else if (dateFilter === "month") {
+        const now = new Date()
+        const d = new Date(record.date)
+        matchesDate = d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      }
+
+      return matchesSearch && matchesStatus && matchesDate
+    })
+  }, [attendance, searchTerm, statusFilter, dateFilter, todayStr])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -151,7 +189,9 @@ export function AttendanceView() {
 
   const handleAddAttendance = (data: any) => {
     if (editingRecord) {
-      setAttendance(attendance.map((rec) => (rec.id === editingRecord.id ? { ...rec, ...data } : rec)))
+      setAttendance((prev) =>
+        prev.map((rec) => (rec.id === editingRecord.id ? { ...rec, ...data } : rec))
+      )
       setEditingRecord(null)
     } else {
       const newRecord: AttendanceRecord = {
@@ -164,14 +204,14 @@ export function AttendanceView() {
         checkOut: data.checkOut || "-",
         department: data.department || "-",
       }
-      setAttendance([newRecord, ...attendance])
+      setAttendance((prev) => [newRecord, ...prev])
     }
     setIsModalOpen(false)
   }
 
   const handleDelete = (id: string) => {
     if (confirm("Are you sure you want to delete this attendance record?")) {
-      setAttendance(attendance.filter((rec) => rec.id !== id))
+      setAttendance((prev) => prev.filter((rec) => rec.id !== id))
     }
   }
 
@@ -181,11 +221,38 @@ export function AttendanceView() {
   }
 
   const getInitials = (name: string) => {
-    return name
+    return (name || "")
       .split(" ")
+      .filter(Boolean)
       .map((n) => n[0])
       .join("")
       .toUpperCase()
+  }
+
+  // ✅ Export CSV
+  const handleExport = () => {
+    const headers = ["EmployeeId", "EmployeeName", "Department", "Date", "Status", "CheckIn", "CheckOut"]
+    const rows = attendance.map((r) => [
+      r.employeeId,
+      r.employeeName,
+      r.department,
+      r.date,
+      r.status,
+      r.checkIn,
+      r.checkOut,
+    ])
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(","))
+      .join("\n")
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `attendance_${new Date().toISOString().split("T")[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -201,11 +268,10 @@ export function AttendanceView() {
               Track and manage employee attendance records
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
-            <span className="text-gray-400 text-sm hidden md:block">
-              {attendance.length} records today
-            </span>
+            <span className="text-gray-400 text-sm hidden md:block">{filteredAttendance.length} records</span>
+
             <Button
               onClick={() => {
                 setEditingRecord(null)
@@ -216,7 +282,9 @@ export function AttendanceView() {
               <Plus className="h-4 w-4 mr-2" />
               Add Record
             </Button>
+
             <Button
+              onClick={handleExport}
               variant="outline"
               className="border-gray-700 bg-gray-800/50 hover:bg-gray-700/50"
             >
@@ -285,7 +353,7 @@ export function AttendanceView() {
           </Card>
         </div>
 
-        {/* Search and Filter Bar */}
+        {/* Search + Filters */}
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <div className="absolute left-4 top-1/2 -translate-y-1/2">
@@ -313,22 +381,13 @@ export function AttendanceView() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-gray-700" />
                 <DropdownMenuItem onClick={() => setStatusFilter("present")} className="text-white hover:bg-gray-700">
-                  <div className="flex items-center">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 mr-2" />
-                    Present
-                  </div>
+                  Present
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setStatusFilter("late")} className="text-white hover:bg-gray-700">
-                  <div className="flex items-center">
-                    <div className="h-2 w-2 rounded-full bg-amber-500 mr-2" />
-                    Late
-                  </div>
+                  Late
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setStatusFilter("absent")} className="text-white hover:bg-gray-700">
-                  <div className="flex items-center">
-                    <div className="h-2 w-2 rounded-full bg-red-500 mr-2" />
-                    Absent
-                  </div>
+                  Absent
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -337,7 +396,7 @@ export function AttendanceView() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="h-12 border-gray-700 bg-gray-800/50 hover:bg-gray-700/50">
                   <Calendar className="h-4 w-4 mr-2" />
-                  Date
+                  Date: {dateFilter}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="border-gray-700 bg-gray-800">
@@ -360,11 +419,12 @@ export function AttendanceView() {
           <CardHeader className="bg-gradient-to-r from-gray-800 to-gray-900/50 border-b border-gray-700/50">
             <CardTitle className="text-lg md:text-xl text-white flex items-center gap-2">
               <Calendar className="h-5 w-5 text-emerald-400" />
-              Today's Attendance ({filteredAttendance.length} records)
+              Attendance ({filteredAttendance.length} records)
             </CardTitle>
           </CardHeader>
+
           <CardContent className="p-0">
-            {/* Desktop Table View */}
+            {/* Desktop */}
             <div className="hidden lg:block">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -379,6 +439,7 @@ export function AttendanceView() {
                       <th className="px-6 py-4 text-center font-semibold text-gray-300">Actions</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {filteredAttendance.length > 0 ? (
                       filteredAttendance.map((record) => (
@@ -399,12 +460,14 @@ export function AttendanceView() {
                               </div>
                             </div>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Building className="h-4 w-4 text-gray-400" />
                               <span className="text-gray-300">{record.department}</span>
                             </div>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-emerald-400" />
@@ -413,6 +476,7 @@ export function AttendanceView() {
                               </span>
                             </div>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-cyan-400" />
@@ -421,17 +485,20 @@ export function AttendanceView() {
                               </span>
                             </div>
                           </td>
+
                           <td className="px-6 py-4">
                             <span className="text-gray-300 font-medium">
                               {record.status === "absent" ? "-" : "8.5h"}
                             </span>
                           </td>
+
                           <td className="px-6 py-4">
                             <Badge className={`flex items-center w-fit ${getStatusColor(record.status)}`}>
                               {getStatusIcon(record.status)}
                               <span className="capitalize">{record.status}</span>
                             </Badge>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex gap-2 justify-center">
                               <Button
@@ -462,7 +529,7 @@ export function AttendanceView() {
                               <Search className="h-8 w-8" />
                             </div>
                             <p className="text-lg font-medium">No attendance records found</p>
-                            <p className="text-sm mt-1">Try changing your search or filter criteria</p>
+                            <p className="text-sm mt-1">Add records using “Add Record”</p>
                           </div>
                         </td>
                       </tr>
@@ -472,7 +539,7 @@ export function AttendanceView() {
               </div>
             </div>
 
-            {/* Mobile/Tablet Card View */}
+            {/* Mobile */}
             <div className="lg:hidden">
               <div className="p-4">
                 {filteredAttendance.length > 0 ? (
@@ -566,7 +633,7 @@ export function AttendanceView() {
                       <Search className="h-8 w-8" />
                     </div>
                     <p className="text-lg font-medium">No attendance records found</p>
-                    <p className="text-sm mt-1 text-center">Try changing your search or filter criteria</p>
+                    <p className="text-sm mt-1 text-center">Add records using “Add Record”</p>
                   </div>
                 )}
               </div>
@@ -575,6 +642,7 @@ export function AttendanceView() {
         </Card>
       </div>
 
+      {/* ✅ PASS employees */}
       <AttendanceModal
         isOpen={isModalOpen}
         onClose={() => {
@@ -583,6 +651,7 @@ export function AttendanceView() {
         }}
         onSubmit={handleAddAttendance}
         editingRecord={editingRecord}
+        employees={employees}
       />
     </div>
   )

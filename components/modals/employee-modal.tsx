@@ -23,8 +23,13 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (formData.name && formData.email) {
-      onSubmit(formData)
+
+    // ✅ Email optional: only name is required
+    if (formData.name.trim()) {
+      onSubmit({
+        ...formData,
+        email: formData.email.trim(), // keep empty if user doesn't enter
+      })
       setFormData({ name: "", email: "", department: "", position: "", joinDate: "" })
     }
   }
@@ -34,11 +39,13 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop with blur effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-900/80 via-purple-900/40 to-blue-900/80 backdrop-blur-sm" onClick={onClose} />
-      
+      <div
+        className="absolute inset-0 bg-gradient-to-br from-gray-900/80 via-purple-900/40 to-blue-900/80 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
       {/* Modal Container */}
       <div className="relative w-full max-w-md bg-gradient-to-b from-white to-gray-50 text-gray-900 rounded-2xl shadow-2xl shadow-blue-900/20 border border-gray-200/80">
-        
         {/* Header with gradient */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-t-2xl">
           <div className="flex items-center gap-3">
@@ -47,8 +54,8 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
             </div>
             <h2 className="text-xl font-bold text-white">Add New Employee</h2>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-full transition-all duration-200"
           >
             <X className="h-5 w-5" />
@@ -61,7 +68,7 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
               <User className="h-4 w-4 text-blue-600" />
-              Full Name
+              Full Name <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <Input
@@ -77,11 +84,11 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
             </div>
           </div>
 
-          {/* Email Field */}
+          {/* Email Field (✅ Optional now) */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
               <Mail className="h-4 w-4 text-purple-600" />
-              Email Address
+              Email Address <span className="text-gray-400 text-xs">(optional)</span>
             </label>
             <div className="relative">
               <Input
@@ -90,7 +97,7 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="pl-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-500 focus:border-purple-500 focus:ring-purple-500/20 transition-all duration-200"
-                required
+                // ✅ removed required
               />
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
                 <Mail className="h-4 w-4 text-gray-400" />
@@ -161,7 +168,7 @@ export function EmployeeModal({ isOpen, onClose, onSubmit }: EmployeeModalProps)
               type="button"
               variant="outline"
               onClick={onClose}
-              className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200 hover:scale-[1.02] active:scale-[1.02]"
             >
               Cancel
             </Button>

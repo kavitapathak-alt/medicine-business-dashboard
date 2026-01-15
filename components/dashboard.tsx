@@ -5,8 +5,6 @@ import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { AttendanceView } from "@/components/attendance-view"
 import { EmployeeView } from "@/components/employee-view"
-import { StatsCards } from "@/components/stats-cards"
-
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("attendance")
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -20,7 +18,7 @@ export default function Dashboard() {
 
         <main className="flex-1 overflow-auto bg-background">
           <div className="p-4 md:p-6 space-y-6">
-            <StatsCards />
+        
 
             {activeTab === "attendance" && <AttendanceView />}
             {activeTab === "employees" && <EmployeeView />}

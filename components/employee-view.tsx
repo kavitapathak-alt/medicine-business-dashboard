@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,44 +26,7 @@ interface Employee {
   joinDate?: string
 }
 
-const SAMPLE_EMPLOYEES: Employee[] = [
-  {
-    id: "E001",
-    name: "Priya Singh",
-    email: "priya@company.com",
-    department: "IT",
-    position: "Senior Developer",
-    salary: "₹45,000",
-    joinDate: "2023-01-15",
-  },
-  {
-    id: "E002",
-    name: "Amit Patel",
-    email: "amit@company.com",
-    department: "Design",
-    position: "UI/UX Designer",
-    salary: "₹40,000",
-    joinDate: "2023-03-10",
-  },
-  {
-    id: "E003",
-    name: "Rajesh Kumar",
-    email: "rajesh@company.com",
-    department: "Marketing",
-    position: "Marketing Head",
-    salary: "₹55,000",
-    joinDate: "2022-11-20",
-  },
-  {
-    id: "E004",
-    name: "Sneha Sharma",
-    email: "sneha@company.com",
-    department: "HR",
-    position: "HR Manager",
-    salary: "₹48,000",
-    joinDate: "2023-02-28",
-  },
-]
+const STORAGE_KEY = "employees_records_v1"
 
 const departmentColors: Record<string, string> = {
   IT: "bg-blue-500/10 text-blue-400 border-blue-500/30",
@@ -76,41 +39,88 @@ const departmentColors: Record<string, string> = {
 }
 
 export function EmployeeView() {
-  const [employees, setEmployees] = useState<Employee[]>(SAMPLE_EMPLOYEES)
+  // ✅ NO static sample. Load from localStorage (refresh safe)
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      const parsed = raw ? (JSON.parse(raw) as Employee[]) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
   const [searchTerm, setSearchTerm] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [filterDepartment, setFilterDepartment] = useState<string>("all")
 
-  const filteredEmployees = employees.filter((emp) => {
-    const matchesSearch =
-      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.position.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesDepartment = filterDepartment === "all" || emp.department === filterDepartment
-    
-    return matchesSearch && matchesDepartment
-  })
+  // ✅ Save to localStorage whenever employees changes
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(employees))
+    } catch (e) {
+      console.error("localStorage save error:", e)
+    }
+  }, [employees])
+
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const matchesSearch =
+        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        emp.position.toLowerCase().includes(searchTerm.toLowerCase())
+
+      const matchesDepartment = filterDepartment === "all" || emp.department === filterDepartment
+
+      return matchesSearch && matchesDepartment
+    })
+  }, [employees, searchTerm, filterDepartment])
+
+  // ✅ Safer ID generator (avoid duplicate after delete)
+  const generateEmployeeId = (list: Employee[]) => {
+    const nums = list
+      .map((e) => Number(String(e.id || "").replace(/[^\d]/g, "")))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    const next = (nums.length ? Math.max(...nums) : 0) + 1
+    return `E${String(next).padStart(3, "0")}`
+  }
 
   const handleAddEmployee = (data: any) => {
+    // data should contain: name, email, department, position, salary, joinDate etc (as your modal sends)
     const newEmployee: Employee = {
-      id: `E${String(employees.length + 1).padStart(3, "0")}`,
-      ...data,
-      salary: "₹35,000", // Default salary
+      id: data.id?.trim() || generateEmployeeId(employees),
+      name: data.name,
+      email: data.email,
+      department: data.department,
+      position: data.position,
+      salary: data.salary || "₹0",
+      joinDate: data.joinDate,
     }
-    setEmployees([newEmployee, ...employees])
+
+    // ✅ avoid duplicate IDs
+    setEmployees((prev) => {
+      const exists = prev.some((e) => e.id === newEmployee.id)
+      if (exists) {
+        // If duplicate, auto-generate another id
+        return [{ ...newEmployee, id: generateEmployeeId(prev) }, ...prev]
+      }
+      return [newEmployee, ...prev]
+    })
+
     setIsModalOpen(false)
   }
 
   const handleDeleteEmployee = (id: string) => {
     if (confirm("Are you sure you want to delete this employee?")) {
-      setEmployees(employees.filter((emp) => emp.id !== id))
+      setEmployees((prev) => prev.filter((emp) => emp.id !== id))
     }
   }
 
   const getInitials = (name: string) => {
-    return name
+    return (name || "")
       .split(" ")
+      .filter(Boolean)
       .map((n) => n[0])
       .join("")
       .toUpperCase()
@@ -120,7 +130,15 @@ export function EmployeeView() {
     return departmentColors[dept] || "bg-gray-500/10 text-gray-400 border-gray-500/30"
   }
 
-  const departments = Array.from(new Set(employees.map(emp => emp.department)))
+  const departments = useMemo(() => Array.from(new Set(employees.map((emp) => emp.department))).filter(Boolean), [employees])
+
+  // Optional: clear all (debug/help)
+  // const clearAll = () => {
+  //   if (confirm("Clear all employees?")) {
+  //     setEmployees([])
+  //     window.localStorage.removeItem(STORAGE_KEY)
+  //   }
+  // }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950 text-white p-4 md:p-6 lg:p-8">
@@ -131,15 +149,11 @@ export function EmployeeView() {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
               Employee Directory
             </h1>
-            <p className="text-gray-400 text-sm md:text-base mt-1">
-              Manage your team members and their details
-            </p>
+            <p className="text-gray-400 text-sm md:text-base mt-1">Manage your team members and their details</p>
           </div>
-          
+
           <div className="flex items-center gap-2">
-            <span className="text-gray-400 text-sm hidden md:block">
-              {employees.length} employees
-            </span>
+            <span className="text-gray-400 text-sm hidden md:block">{employees.length} employees</span>
             <Button
               onClick={() => setIsModalOpen(true)}
               className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold shadow-lg shadow-cyan-500/25 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
@@ -224,7 +238,7 @@ export function EmployeeView() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">Average Salary</p>
-                  <p className="text-2xl md:text-3xl font-bold mt-2 text-white">₹45,500</p>
+                  <p className="text-2xl md:text-3xl font-bold mt-2 text-white">—</p>
                 </div>
                 <div className="p-3 bg-green-500/10 rounded-lg">
                   <DollarSign className="h-6 w-6 text-green-400" />
@@ -238,7 +252,7 @@ export function EmployeeView() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">This Month</p>
-                  <p className="text-2xl md:text-3xl font-bold mt-2 text-white">+2</p>
+                  <p className="text-2xl md:text-3xl font-bold mt-2 text-white">—</p>
                 </div>
                 <div className="p-3 bg-pink-500/10 rounded-lg">
                   <Plus className="h-6 w-6 text-pink-400" />
@@ -340,7 +354,7 @@ export function EmployeeView() {
                               <Search className="h-8 w-8" />
                             </div>
                             <p className="text-lg font-medium">No employees found</p>
-                            <p className="text-sm mt-1">Try changing your search or filter criteria</p>
+                            <p className="text-sm mt-1">Add employees using “Add Employee”</p>
                           </div>
                         </td>
                       </tr>
@@ -423,7 +437,7 @@ export function EmployeeView() {
                       <Search className="h-8 w-8" />
                     </div>
                     <p className="text-lg font-medium">No employees found</p>
-                    <p className="text-sm mt-1 text-center">Try changing your search or filter criteria</p>
+                    <p className="text-sm mt-1 text-center">Add employees using “Add Employee”</p>
                   </div>
                 )}
               </div>
@@ -432,7 +446,11 @@ export function EmployeeView() {
         </Card>
       </div>
 
-      <EmployeeModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleAddEmployee} />
+      <EmployeeModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleAddEmployee}
+      />
     </div>
   )
 }
